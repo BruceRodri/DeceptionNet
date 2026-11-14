@@ -1,0 +1,17 @@
+{
+  "device.node_id": "canary-bd",
+  "ip.ignorelist": [],
+  "http.enabled": false,
+  "mysql.enabled": true,
+  "mysql.port": 3307,
+  "mysql.banner": "5.7.0-laboratorio",
+  "mysql.log_connection_made": true,
+  "portscan.enabled": false,
+  "logger": {
+    "class": "PyLogger",
+    "kwargs": {
+      "formatters": {"plain": {"format": "%(message)s"}},
+      "handlers": {"file": {"class": "logging.FileHandler", "filename": "/registros/eventos.jsonl", "formatter": "plain"}}
+    }
+  }
+}

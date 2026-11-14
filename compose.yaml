@@ -1,0 +1,54 @@
+name: deceptionnet
+
+services:
+  redis:
+    image: redis:7-alpine
+    # REDIS STREAMS TRANSPORTARA LOS EVENTOS DE LOS HONEYPOTS.
+    # APPENDONLY ACTIVA UN REGISTRO PERSISTENTE DE OPERACIONES.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - gestion
+    healthcheck:
+      # PONG SIGNIFICA QUE REDIS RESPONDE CORRECTAMENTE.
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  postgres:
+    image: postgres:17-alpine
+    # POSTGRESQL ALMACENARA EVENTOS, ALERTAS Y RESULTADOS.
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - gestion
+    healthcheck:
+      # $$ EVITA QUE COMPOSE EXPANDA VARIABLES DESTINADAS AL CONTENEDOR.
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  gestion:
+    # INTERNAL TRUE CREA UNA RED SIN SALIDA EXTERNA DIRECTA.
+    # EN DIAS POSTERIORES AÑADIREMOS LA RED DE SEÑUELOS.
+    driver: bridge
+    internal: true
+
+volumes:
+  # LOS DATOS SE CONSERVAN AL DETENER O RECREAR LOS CONTENEDORES.
+  redis_data:
+  postgres_data:

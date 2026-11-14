@@ -1,0 +1,9 @@
+# NO SUBIR SECRETOS NI ARCHIVOS LOCALES AL REPOSITORIO.
+.env
+*.log
+.DS_Store
+.vscode/
+node_modules/
+.secrets/
+dist/
+__pycache__/

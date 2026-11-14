@@ -1,0 +1,19 @@
+{
+  "device.node_id": "canary-web",
+  "ip.ignorelist": [],
+  "http.enabled": true,
+  "http.port": 8080,
+  "http.skin": "nasLogin",
+  "http.banner": "Apache/2.4.0",
+  "http.log_unimplemented_method_requests": true,
+  "http.log_redirect_request": true,
+  "mysql.enabled": false,
+  "portscan.enabled": false,
+  "logger": {
+    "class": "PyLogger",
+    "kwargs": {
+      "formatters": {"plain": {"format": "%(message)s"}},
+      "handlers": {"file": {"class": "logging.FileHandler", "filename": "/registros/eventos.jsonl", "formatter": "plain"}}
+    }
+  }
+}

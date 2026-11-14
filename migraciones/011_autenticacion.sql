@@ -1,0 +1,26 @@
+-- CREAR IDENTIDADES Y SESIONES LOCALES SIN ALMACENAR CONTRASEÑAS EN CLARO.
+CREATE TABLE IF NOT EXISTS usuarios_locales (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  usuario TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  rol TEXT NOT NULL CHECK (rol IN ('admin','analista')),
+  tenant_id TEXT NOT NULL DEFAULT 'lab',
+  activo BOOLEAN NOT NULL DEFAULT true,
+  prueba BOOLEAN NOT NULL DEFAULT false,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS sesiones_locales (
+  id_hash TEXT PRIMARY KEY,
+  usuario_id BIGINT NOT NULL REFERENCES usuarios_locales(id),
+  vence_en TIMESTAMPTZ NOT NULL,
+  revocada_en TIMESTAMPTZ,
+  creada_en TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS auditoria_local (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  usuario_id BIGINT REFERENCES usuarios_locales(id),
+  accion TEXT NOT NULL,
+  resultado TEXT NOT NULL,
+  fecha TIMESTAMPTZ NOT NULL DEFAULT now(),
+  detalle TEXT NOT NULL DEFAULT ''
+);

@@ -1,0 +1,34 @@
+name: deceptionnet_empresa_a
+services:
+  senuelo:
+    build: ../cliente
+    command: ["python","-u","/app/senuelo.py"]
+    networks: [local]
+    volumes: ["registros:/registros"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+  agente:
+    build: ../cliente
+    environment:
+      TENANT_ID: empresa_a
+    volumes:
+      - registros:/registros:ro
+      - estado:/estado
+      - ../../.secrets/agente_a_token:/run/secrets/agent_token:ro
+      - ../../.secrets/agente_tls.crt:/run/secrets/agente_tls.crt:ro
+    networks: [local, central]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+networks:
+  local:
+    internal: true
+  central:
+    external: true
+    name: deceptionnet_agentes
+volumes:
+  registros:
+  estado:

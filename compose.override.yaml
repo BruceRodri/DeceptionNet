@@ -1,0 +1,293 @@
+services:
+  # INGRESO CIFRADO DE AGENTES CON IDENTIDADES DE LABORATORIO.
+  ingreso-agentes:
+    build:
+      context: ./agentes/ingreso
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ./.secrets/agente_a_token:/run/secrets/agente_a_token:ro
+      - ./.secrets/agente_b_token:/run/secrets/agente_b_token:ro
+      - ./.secrets/agente_tls.key:/run/secrets/agente_tls.key:ro
+      - ./.secrets/agente_tls.crt:/run/secrets/agente_tls.crt:ro
+      - ./.secrets/ingreso_db_password:/run/secrets/ingreso_db_password:ro
+    networks:
+      - gestion
+      - agentes
+    depends_on:
+      redis:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+  # CONTROLADOR ADAPTATIVO CON ACCESO LIMITADO A SU CATALOGO.
+  controlador:
+    build:
+      context: ./controlador
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      MTD_COOLDOWN_SEGUNDOS: ${MTD_COOLDOWN_SEGUNDOS:-20}
+      MTD_POLITICA: ${MTD_POLITICA:-adaptativa}
+    volumes:
+      - ./.secrets/controlador_db_password:/run/secrets/controlador_db_password:ro
+    networks:
+      - gestion
+    depends_on:
+      postgres:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+  # GATEWAY DE LABORATORIO SIN ACCESO AL SOCKET DE DOCKER.
+  gateway:
+    build:
+      context: ./gateway
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ./.secrets/gateway_db_password:/run/secrets/gateway_db_password:ro
+    ports:
+      - "127.0.0.1:2201:2201"
+      - "127.0.0.1:2202:2202"
+      - "127.0.0.1:2203:2203"
+    networks:
+      - gestion
+      - laboratorio
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cowrie:
+        condition: service_started
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+  # API DE CONSULTA SOLO PARA EL LABORATORIO LOCAL.
+  api:
+    build:
+      context: ./api
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      UMBRAL_CONEXIONES: ${UMBRAL_CONEXIONES:-10}
+      UMBRAL_FALLOS: ${UMBRAL_FALLOS:-5}
+      VENTANA_SEGUNDOS: ${VENTANA_SEGUNDOS:-300}
+      MTD_POLITICA: ${MTD_POLITICA:-adaptativa}
+    volumes:
+      - ./.secrets/api_db_password:/run/secrets/api_db_password:ro
+      - ./.secrets/auth_db_password:/run/secrets/auth_db_password:ro
+      - ./.secrets/jwt_secret:/run/secrets/jwt_secret:ro
+      - ./.secrets/bootstrap_token:/run/secrets/bootstrap_token:ro
+      - ./.secrets/rls_lab_password:/run/secrets/rls_lab_password:ro
+      - ./.secrets/rls_empresa_a_password:/run/secrets/rls_empresa_a_password:ro
+      - ./.secrets/rls_empresa_b_password:/run/secrets/rls_empresa_b_password:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - gestion
+      - interfaz
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  panel:
+    build:
+      context: ./panel
+    ports:
+      - "127.0.0.1:8081:8080"
+    networks:
+      - interfaz
+    depends_on:
+      api:
+        condition: service_started
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+  # SENUEL0S AISLADOS: NO SON SERVICIOS WEB NI BASES DE DATOS REALES.
+  canary-web:
+    build:
+      context: ./opencanary
+    tmpfs:
+      - /run
+    ports:
+      - "127.0.0.1:8088:8080"
+    volumes:
+      - ./opencanary/web.json:/root/.opencanary.conf:ro
+      - canary_web_logs:/registros
+    networks:
+      - laboratorio
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+    security_opt:
+      - no-new-privileges:true
+
+  canary-bd:
+    build:
+      context: ./opencanary
+    tmpfs:
+      - /run
+    ports:
+      - "127.0.0.1:3307:3307"
+    volumes:
+      - ./opencanary/bd.json:/root/.opencanary.conf:ro
+      - canary_bd_logs:/registros
+    networks:
+      - laboratorio
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+    security_opt:
+      - no-new-privileges:true
+
+  collector-web:
+    build:
+      context: ./multicolector
+    environment:
+      SENSOR_ID: canary-web
+    volumes:
+      - canary_web_logs:/registros:ro
+      - collector_web_state:/estado
+    networks:
+      - gestion
+    depends_on:
+      redis:
+        condition: service_healthy
+      canary-web:
+        condition: service_started
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  collector-bd:
+    build:
+      context: ./multicolector
+    environment:
+      SENSOR_ID: canary-bd
+    volumes:
+      - canary_bd_logs:/registros:ro
+      - collector_bd_state:/estado
+    networks:
+      - gestion
+    depends_on:
+      redis:
+        condition: service_healthy
+      canary-bd:
+        condition: service_started
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+  # ANALIZAR EVENTOS SIN EXPONER PUERTOS AL EXTERIOR.
+  analyzer:
+    build:
+      context: ./analyzer
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      UMBRAL_FALLOS: ${UMBRAL_FALLOS:-5}
+      UMBRAL_CONEXIONES: ${UMBRAL_CONEXIONES:-10}
+      VENTANA_SEGUNDOS: ${VENTANA_SEGUNDOS:-300}
+      RECUPERAR_PENDIENTES_MS: ${RECUPERAR_PENDIENTES_MS:-30000}
+    networks:
+      - gestion
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+  # HONEYPOT QUE SIMULA UN SERVIDOR SSH.
+  cowrie:
+    image: cowrie/cowrie:latest
+    # PERMITIR CONEXIONES SOLO DESDE NUESTRA COMPUTADORA.
+    ports:
+      - "127.0.0.1:2222:2222"
+    # CONSERVAR LOS REGISTROS Y CONFIGURACIONES.
+    volumes:
+      - cowrie_etc:/cowrie/cowrie-git/etc
+      - cowrie_var:/cowrie/cowrie-git/var
+    networks:
+      - laboratorio
+    restart: unless-stopped
+    # REDUCIR LOS PRIVILEGIOS DEL HONEYPOT.
+    cap_drop:
+      - ALL
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+  # SERVICIO QUE ENVIA LOS EVENTOS DE COWRIE A REDIS.
+  collector:
+    # CONSTRUIR LA IMAGEN UTILIZANDO NUESTRO DOCKERFILE.
+    build:
+      context: ./collector
+    # COMPARTIR LOS REGISTROS DE COWRIE EN MODO SOLO LECTURA.
+    volumes:
+      - cowrie_var:/datos_cowrie:ro
+      - collector_state:/estado
+    # CONECTAR EL COLECTOR A LA RED PRIVADA DE REDIS.
+    networks:
+      - gestion
+    # ESPERAR A QUE REDIS ESTE DISPONIBLE.
+    depends_on:
+      redis:
+        condition: service_healthy
+      cowrie:
+        condition: service_started
+    # REINICIAR EL COLECTOR SI SE DETIENE.
+    restart: unless-stopped
+    # REDUCIR LOS PERMISOS DEL CONTENEDOR.
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+# RED UTILIZADA POR LOS HONEYPOTS.
+networks:
+  agentes:
+    name: deceptionnet_agentes
+    driver: bridge
+    internal: true
+  interfaz:
+    driver: bridge
+  laboratorio:
+    driver: bridge
+# VOLUMENES PARA ALMACENAR REGISTROS Y ESTADO.
+volumes:
+  canary_web_logs:
+  canary_bd_logs:
+  collector_web_state:
+  collector_bd_state:
+  cowrie_etc:
+  cowrie_var:
+  collector_state:
